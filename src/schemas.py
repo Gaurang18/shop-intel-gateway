@@ -8,11 +8,20 @@ from pydantic import BaseModel, Field
 
 
 class RunBody(BaseModel):
-    """Actor run input (must match the actor schema on Apify)."""
+    """Body for `POST .../run` and `POST .../run-async`.
+
+    The gateway **does not validate** fields: whatever JSON you put in `input` is sent to Apify
+    as `runInput`. Any combination of properties the actor accepts will work; invalid shapes fail
+    at Apify with their error response. Use **`GET /v1/{scraperKey}/input-json-schema`** for the
+    actor’s authoritative JSON Schema (from Apify’s default build).
+    """
 
     input: dict[str, Any] = Field(
         default_factory=dict,
-        description="JSON object passed to the actor as `runInput`.",
+        description=(
+            "Arbitrary JSON object forwarded to Apify as `runInput` (all supported actor fields "
+            "and combinations are allowed)."
+        ),
     )
 
 
@@ -30,6 +39,29 @@ class ScraperSummary(BaseModel):
 
 class ScraperListResponse(BaseModel):
     scrapers: list[ScraperSummary]
+
+
+class ScraperHealthResponse(BaseModel):
+    """Per-scraper liveness (no Apify call). Use for RapidAPI health checks per product."""
+
+    ok: Literal[True] = True
+    scraperKey: str
+    title: str
+
+
+class ActorInputSchemaResponse(BaseModel):
+    """JSON Schema for run `input`, as published by Apify for the actor’s default build."""
+
+    ok: Literal[True] = True
+    scraperKey: str
+    actorId: str
+    inputSchema: Any | None = Field(
+        default=None,
+        description="Parsed JSON Schema for the `input` object in `POST .../run` (may be null if Apify omits it).",
+    )
+    buildNumber: float | int | None = None
+    actVersion: str | None = None
+    apifyStoreUrl: str
 
 
 class RunSyncResponse(BaseModel):
@@ -80,8 +112,8 @@ class ServiceInfo(BaseModel):
         default_factory=lambda: {
             "usageBilling": (
                 "RapidAPI counts one request per HTTP call to each published endpoint. "
-                "Create a separate RapidAPI operation per scraper (e.g. POST /v1/run/instagram vs "
-                "POST /v1/run/googleNews) to price them independently."
+                "Prefer per-scraper paths (e.g. POST /v1/instagram/run vs POST /v1/googleNews/run) "
+                "or legacy POST /v1/run/{key}; use distinct operations to price independently."
             ),
             "apifyToken": (
                 "A single APIFY_TOKEN on this server calls Apify for all scrapers. "

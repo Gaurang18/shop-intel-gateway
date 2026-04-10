@@ -4,6 +4,7 @@ Run in isolation with a real token:
 
   cd shop-intel-gateway
   export APIFY_TOKEN='apify_api_...'
+  export RUN_LIVE_SCRAPER_TESTS=1
   pip install -r requirements.txt -r requirements-dev.txt
   pytest tests/test_live_scrapers.py -v --tb=short
 
@@ -31,9 +32,14 @@ def _have_live_token() -> bool:
     return bool(t and t != "test-apify-token")
 
 
+def _live_tests_enabled() -> bool:
+    """Avoid slow real Apify runs during normal `pytest` when the token is in the environment."""
+    return os.getenv("RUN_LIVE_SCRAPER_TESTS", "").strip() == "1"
+
+
 pytestmark = pytest.mark.skipif(
-    not _have_live_token(),
-    reason="Set APIFY_TOKEN to a real Apify token (not test-apify-token).",
+    not _live_tests_enabled() or not _have_live_token(),
+    reason="Set RUN_LIVE_SCRAPER_TESTS=1 and a real APIFY_TOKEN to run live Apify tests.",
 )
 
 

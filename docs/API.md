@@ -2,7 +2,7 @@
 
 Base URL: your deployed origin (e.g. `https://shop-intel-gateway.onrender.com`) or `http://127.0.0.1:8000` locally.
 
-**Versioned base (recommended for RapidAPI):** prefix paths with **`/v1`** (e.g. `POST /v1/run/instagram`). The same routes also exist **without** `/v1` for backward compatibility.
+**Versioned base (recommended for RapidAPI):** prefix paths with **`/v1`**. Each scraper has its **own path prefix** (e.g. `GET /v1/instagram/health`, `POST /v1/instagram/run`). Legacy `POST /v1/run/{key}` still works. Unversioned mirrors exist for the same paths without `/v1`.
 
 **RapidAPI-focused doc** (all scrapers, endpoints, headers, examples): [`docs/RAPIDAPI.md`](RAPIDAPI.md).
 
@@ -52,12 +52,13 @@ Service metadata and links to documentation.
 ```json
 {
   "service": "shop-intel-gateway",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "docs": {
     "swagger": "/docs",
     "redoc": "/redoc",
     "openapi": "/openapi.json",
-    "apiV1": "/v1/scrapers, /v1/run/{key}, …"
+    "perScraper": "/{key}/health, /{key}/info, /{key}/run, /{key}/run-async",
+    "apiV1": "/v1/scrapers, /v1/run/{key}, /v1/instagram/…, …"
   },
   "rapidApi": {
     "usageBilling": "…",
@@ -78,6 +79,31 @@ Load balancer / Render health check. Does not call Apify.
 ```json
 { "ok": true }
 ```
+
+---
+
+## Per-scraper API (recommended for RapidAPI)
+
+For each catalog **`key`** (e.g. `instagram`, `metaAdLibrary`, `googleNews`), these paths exist under **`/v1/{key}/…`** and without `/v1`:
+
+| Method | Path | Purpose |
+|--------|------|--------|
+| `GET` | `/{key}/health` | Liveness for that scraper only (does **not** call Apify). |
+| `GET` | `/{key}/info` | Same metadata as `GET /scrapers/{key}`. |
+| `GET` | `/{key}/input-json-schema` | **JSON Schema** for the `input` object (from Apify’s default actor build; **calls Apify**). |
+| `POST` | `/{key}/run` | Same as `POST /run/{key}` (sync run + dataset). |
+| `POST` | `/{key}/run-async` | Same as `POST /run-async/{key}`. |
+
+**Examples (versioned):**
+
+- `GET /v1/instagram/health`
+- `GET /v1/metaAdLibrary/info`
+- `GET /v1/instagram/input-json-schema` — all allowed `input` fields for that actor build
+- `POST /v1/googleNews/run` with body `{ "input": { … } }`
+
+**Input shapes:** the gateway does **not** validate `input`; it forwards the JSON to Apify. Any combination of fields the actor accepts will work. Use **`input-json-schema`** (or the actor’s Apify Store page) to discover properties and types.
+
+In **Swagger UI** (`/docs`), each scraper appears as its **own tag** with these operations; `POST …/run` descriptions link to **`input-json-schema`** for the full input model.
 
 ---
 
@@ -207,8 +233,9 @@ Poll Apify (API or console) for run status and dataset items, or add webhooks la
 ## RapidAPI: per-scraper endpoints and usage billing
 
 1. **Base URL** in RapidAPI = your gateway host (no path), e.g. `https://your-app.onrender.com`.
-2. Add **one API operation per scraper**, each with a **different path**, e.g.  
-   `POST https://…/v1/run/instagram`, `POST https://…/v1/run/metaAdLibrary`, …  
+2. Add **one API product or one group of operations per scraper**, each with a **different path prefix**, e.g.  
+   `POST https://…/v1/instagram/run`, `GET https://…/v1/instagram/health`, … vs `POST https://…/v1/metaAdLibrary/run`, …  
+   (Legacy `POST /v1/run/{key}` still works if you prefer a single path pattern.)  
    RapidAPI will **meter and bill per operation** according to the plans you configure there.
 3. **Body** for each: `{ "input": { … } }` — copy `exampleInput` from `GET /v1/scrapers` for that key.
 4. **Apify token**: configure **only** on the server as `APIFY_TOKEN`. Subscribers never see it; they only use the **RapidAPI key**.

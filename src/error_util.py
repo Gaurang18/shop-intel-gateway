@@ -6,8 +6,17 @@ from typing import Any
 
 
 def scraper_key_from_path(path: str) -> str | None:
-    """Extract catalog key from `/run/{key}` or `/v1/run/{key}` (and run-async)."""
+    """Extract catalog key from run URLs (prefixed and legacy)."""
     parts = [p for p in path.split("/") if p]
+    if not parts:
+        return None
+    # POST /v1/{key}/run, /v1/{key}/run-async
+    if len(parts) >= 3 and parts[0] == "v1" and parts[2] in ("run", "run-async"):
+        return parts[1]
+    # POST /{key}/run (unversioned)
+    if len(parts) >= 2 and parts[1] in ("run", "run-async") and parts[0] != "v1":
+        return parts[0]
+    # Legacy POST /run/{key}, /v1/run/{key}
     if len(parts) >= 2 and parts[-2] in ("run", "run-async"):
         return parts[-1]
     if len(parts) >= 3 and parts[-3] == "v1" and parts[-2] in ("run", "run-async"):

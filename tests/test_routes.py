@@ -67,6 +67,71 @@ def test_run_unknown_scraper(client: TestClient) -> None:
     assert err["scraperKey"] == "unknown"
 
 
+def test_input_json_schema(client: TestClient) -> None:
+    import src.main as main
+
+    mock_get = MagicMock(
+        return_value={
+            "inputSchema": '{"type": "object", "title": "In"}',
+            "buildNumber": 42,
+            "actVersion": "1.0.0",
+        }
+    )
+    mock_default_build = MagicMock()
+    mock_default_build.get = mock_get
+    mock_actor_res = MagicMock()
+    mock_actor_res.default_build = MagicMock(return_value=mock_default_build)
+    mock_client = MagicMock()
+    mock_client.actor = MagicMock(return_value=mock_actor_res)
+
+    main.app.dependency_overrides[main.get_apify_client] = lambda: mock_client
+    try:
+        r = client.get("/v1/instagram/input-json-schema")
+    finally:
+        main.app.dependency_overrides.clear()
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["scraperKey"] == "instagram"
+    assert data["inputSchema"]["type"] == "object"
+    mock_client.actor.assert_called_once_with("apify/instagram-scraper")
+
+
+def test_per_scraper_health_and_info(client: TestClient) -> None:
+    h = client.get("/instagram/health")
+    assert h.status_code == 200
+    assert h.json() == {"ok": True, "scraperKey": "instagram", "title": "Instagram"}
+
+    i = client.get("/v1/googleNews/info")
+    assert i.status_code == 200
+    assert i.json()["key"] == "googleNews"
+    assert i.json()["actorId"] == "automation-lab/google-news-scraper"
+
+
+def test_per_scraper_run_matches_legacy_run(client: TestClient) -> None:
+    import src.main as main
+
+    mock_client = MagicMock()
+    mock_client.actor.return_value.call.return_value = {
+        "id": "r-pref",
+        "status": "SUCCEEDED",
+        "defaultDatasetId": "ds-pref",
+    }
+    mock_client.dataset.return_value.list_items.return_value = MagicMock(items=[{"a": 1}])
+
+    main.app.dependency_overrides[main.get_apify_client] = lambda: mock_client
+    try:
+        legacy = client.post("/run/instagram", json={"input": {}})
+        prefixed = client.post("/instagram/run", json={"input": {}})
+        v1 = client.post("/v1/instagram/run", json={"input": {}})
+    finally:
+        main.app.dependency_overrides.clear()
+
+    assert legacy.json() == prefixed.json() == v1.json()
+    assert legacy.status_code == 200
+
+
 def test_v1_paths_match_unversioned_run(client: TestClient) -> None:
     import src.main as main
 
@@ -152,7 +217,13 @@ def test_rapidapi_proxy_secret_required(configure_env: Any) -> None:
 
     with TestClient(main.app) as c:
         assert c.get("/scrapers").status_code == 401
+        assert c.get("/instagram/health").status_code == 401
+        assert c.get("/instagram/input-json-schema").status_code == 401
         ok = c.get("/scrapers", headers={"X-RapidAPI-Proxy-Secret": "expected-secret"})
         assert ok.status_code == 200
+        assert (
+            c.get("/instagram/health", headers={"X-RapidAPI-Proxy-Secret": "expected-secret"}).status_code
+            == 200
+        )
         assert c.get("/health").status_code == 200
         assert c.get("/").status_code == 200

@@ -10,7 +10,7 @@ Your deployed API base looks like: `https://<your-service>.onrender.com` (exampl
 
 | Concept | How it works |
 |--------|----------------|
-| **One scraper** | One **catalog key** (e.g. `instagram`) → one URL path, e.g. `POST /v1/run/instagram`. |
+| **One scraper** | One **catalog key** (e.g. `instagram`) → its **own path prefix**, e.g. `POST /v1/instagram/run`, `GET /v1/instagram/health` (legacy `POST /v1/run/instagram` still works). |
 | **Per-usage billing** | In RapidAPI, create **one API operation per path**. RapidAPI counts **one billable request per HTTP call** to that operation (according to the plans you configure). |
 | **Apify** | The server uses **`APIFY_TOKEN`** to call Apify. Subscribers use **only** the RapidAPI key; they **never** receive your Apify token. |
 | **Versioned URLs** | Prefer paths under **`/v1/`** for all new RapidAPI operations. The same routes exist **without** `/v1` for backward compatibility. |
@@ -32,7 +32,7 @@ This gateway **does not** require `X-RapidAPI-Key` on the server by default (Rap
 
 ### 2.2 Optional: verify traffic is from RapidAPI
 
-If you set environment variable **`RAPIDAPI_PROXY_SECRET`** on the server, then **every route in the table below except `GET /` and `GET /health`** requires:
+If you set environment variable **`RAPIDAPI_PROXY_SECRET`** on the server, then **every route in the table below except `GET /` and `GET /health`** requires (including **`GET /v1/{key}/health`** per scraper):
 
 | Header | Value |
 |--------|--------|
@@ -59,9 +59,14 @@ Paths are listed **with `/v1`** (recommended). The same path **without** `/v1` a
 | GET | `/` | No | Service name, version, doc links, RapidAPI hints. |
 | GET | `/health` | No | Liveness; does **not** call Apify. |
 | GET | `/v1/scrapers` | Yes | List all scrapers + metadata + `exampleInput`. |
-| GET | `/v1/scrapers/{scraper_key}` | Yes | One scraper by key. |
-| POST | `/v1/run/{scraper_key}` | Yes | Run actor to completion; return **default dataset** rows. |
-| POST | `/v1/run-async/{scraper_key}` | Yes | Start actor only; return `runId` and `defaultDatasetId` (HTTP **202**). |
+| GET | `/v1/scrapers/{scraper_key}` | Yes | One scraper by key (same JSON as `GET /v1/{key}/info`). |
+| GET | `/v1/{scraper_key}/health` | Yes | Per-scraper liveness; does **not** call Apify. |
+| GET | `/v1/{scraper_key}/info` | Yes | Metadata for that scraper only. |
+| GET | `/v1/{scraper_key}/input-json-schema` | Yes | **JSON Schema** for `input` (from Apify default build; calls Apify). |
+| POST | `/v1/{scraper_key}/run` | Yes | Run actor to completion; return **default dataset** rows. |
+| POST | `/v1/{scraper_key}/run-async` | Yes | Start actor only; return `runId` and `defaultDatasetId` (HTTP **202**). |
+| POST | `/v1/run/{scraper_key}` | Yes | **Legacy** sync run (same as `POST /v1/{key}/run`). |
+| POST | `/v1/run-async/{scraper_key}` | Yes | **Legacy** async start (same as `POST /v1/{key}/run-async`). |
 
 **Path parameter**
 
@@ -71,7 +76,15 @@ Paths are listed **with `/v1`** (recommended). The same path **without** `/v1` a
 
 ---
 
-## 4. Request body (all `POST /v1/run/...` and `POST /v1/run-async/...`)
+## 3b. Run `input`: all Apify permutations
+
+- The gateway sends `body.input` to Apify as **`runInput` unchanged**. It does **not** check required fields or enums; **every valid combination** the actor supports can be sent in one `POST …/run`.
+- To see **allowed properties, types, and descriptions** for the deployed actor version, call **`GET /v1/{scraper_key}/input-json-schema`** (returns Apify’s JSON Schema for the default build). Your catalog `exampleInput` and Swagger **examples** are hints only.
+- You do **not** need separate HTTP routes per input “mode” unless you want different RapidAPI operations for billing/UX—the same `POST …/run` already accepts all modes the actor allows.
+
+---
+
+## 4. Request body (all `POST /v1/.../run`, `POST /v1/.../run-async`, and legacy `POST /v1/run/...` / `POST /v1/run-async/...`)
 
 Single JSON object:
 
@@ -412,4 +425,4 @@ curl -sS -X POST "https://YOUR_HOST/v1/run-async/googleNews" \
 
 ---
 
-*Gateway version at time of writing: **1.2.0** (see `GET /` → `version`).*
+*Gateway version at time of writing: **1.4.0** (see `GET /` → `version`).*

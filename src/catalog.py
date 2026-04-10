@@ -26,7 +26,7 @@ def _actor(env_key: str, default_id: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ScraperSpec:
-    """One logical scraper = one RapidAPI path segment (`/v1/run/{key}`)."""
+    """One logical scraper = path prefix `/v1/{key}/…` (run, health, input-json-schema, …)."""
 
     key: str
     actor_id: str
